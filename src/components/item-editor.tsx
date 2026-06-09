@@ -2,27 +2,53 @@
 
 import { useActionState, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { Loader2, Trash2, Check } from "lucide-react";
-import { updateItem, deleteItem, type ActionState } from "@/lib/actions";
-import type { ItemView } from "@/lib/types";
+import {
+  updateItem,
+  deleteItem,
+  type ActionState,
+} from "@/lib/actions";
+import type { Collection, ItemView, Tag } from "@/lib/types";
 import { Button, Input, Label, Textarea } from "./ui";
+import { CollectionCombo, TagCombo } from "./combobox";
 
 const empty: ActionState = {};
 
-export function ItemEditor({ item }: { item: ItemView }) {
+export function ItemEditor({
+  item,
+  collections,
+  tags,
+}: {
+  item: ItemView;
+  collections: Collection[];
+  tags: Tag[];
+}) {
   const router = useRouter();
   const [state, formAction, pending] = useActionState(updateItem, empty);
   const [deleting, setDeleting] = useState(false);
   const saved = state.success === true;
 
   useEffect(() => {
-    if (state.success) router.refresh();
-  }, [state.success, router]);
+    if (state.success) {
+      toast.success("Changes saved");
+      router.refresh();
+    } else if (state.error) {
+      toast.error(state.error);
+    }
+  }, [state, router]);
 
   async function onDelete() {
     if (!confirm("Delete this item permanently?")) return;
     setDeleting(true);
-    await deleteItem(item.id);
+    const r = await deleteItem(item.id);
+    if (r.error) {
+      toast.error(r.error);
+      setDeleting(false);
+      return;
+    }
+    toast.success("Item deleted");
+    router.push("/");
   }
 
   return (
@@ -46,25 +72,11 @@ export function ItemEditor({ item }: { item: ItemView }) {
         </div>
       )}
 
-      <div>
-        <Label htmlFor="tags">Tags (comma separated)</Label>
-        <Input
-          id="tags"
-          name="tags"
-          defaultValue={item.tags.join(", ")}
-          placeholder="learning, design"
-        />
-      </div>
-
-      <div>
-        <Label htmlFor="collection">Collection</Label>
-        <Input
-          id="collection"
-          name="collection"
-          defaultValue={item.collection ?? ""}
-          placeholder="e.g. Web dev"
-        />
-      </div>
+      <TagCombo tags={tags} defaultTags={item.tags} />
+      <CollectionCombo
+        collections={collections}
+        defaultName={item.collection_name ?? ""}
+      />
 
       <div>
         <Label htmlFor="notes">Notes</Label>
@@ -76,8 +88,6 @@ export function ItemEditor({ item }: { item: ItemView }) {
           placeholder="Why are you saving this?"
         />
       </div>
-
-      {state.error && <p className="text-sm text-danger">{state.error}</p>}
 
       <div className="flex items-center gap-3">
         <Button type="submit" disabled={pending}>

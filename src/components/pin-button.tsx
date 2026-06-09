@@ -1,12 +1,12 @@
 "use client";
 
-import { Star } from "lucide-react";
-import { useTransition, useState } from "react";
+import { Pin } from "lucide-react";
+import { useState, useTransition } from "react";
 import { toast } from "sonner";
-import { toggleFavorite } from "@/lib/actions";
+import { togglePin } from "@/lib/actions";
 import { cn } from "@/lib/utils";
 
-export function FavoriteButton({
+export function PinButton({
   id,
   initial,
   className,
@@ -15,17 +15,17 @@ export function FavoriteButton({
   initial: boolean;
   className?: string;
 }) {
-  const [fav, setFav] = useState(initial);
+  const [pinned, setPinned] = useState(initial);
   const [pending, startTransition] = useTransition();
 
   function onClick(e: React.MouseEvent) {
     e.preventDefault();
     e.stopPropagation();
-    const next = !fav;
-    setFav(next); // optimistic
+    const next = !pinned;
+    setPinned(next);
     startTransition(async () => {
-      await toggleFavorite(id, next);
-      toast.success(next ? "Added to favorites" : "Removed from favorites");
+      await togglePin(id, next);
+      toast.success(next ? "Pinned to top" : "Unpinned");
     });
   }
 
@@ -34,18 +34,18 @@ export function FavoriteButton({
       type="button"
       onClick={onClick}
       disabled={pending}
-      aria-label={fav ? "Remove from favorites" : "Add to favorites"}
-      aria-pressed={fav}
+      aria-label={pinned ? "Unpin" : "Pin to top"}
+      aria-pressed={pinned}
       className={cn(
         "inline-flex h-9 w-9 items-center justify-center rounded-full bg-surface/90 backdrop-blur transition hover:scale-105 active:scale-95",
         className
       )}
     >
-      <Star
-        className="h-5 w-5 transition"
+      <Pin
+        className="h-[18px] w-[18px] transition"
         style={{
-          fill: fav ? "var(--star)" : "transparent",
-          color: fav ? "var(--star)" : "var(--muted)",
+          fill: pinned ? "var(--accent)" : "transparent",
+          color: pinned ? "var(--accent)" : "var(--muted)",
         }}
       />
     </button>

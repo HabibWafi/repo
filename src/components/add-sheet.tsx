@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState, useCallback, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import {
   Loader2,
   X,
@@ -18,53 +18,34 @@ import {
   type ActionState,
   type ImportState,
 } from "@/lib/actions";
-import type { PreviewResult } from "@/lib/types";
+import type { Collection, PreviewResult, Tag } from "@/lib/types";
 import { PROVIDER_META } from "@/lib/providers";
 import { Button, Input, Label, Textarea } from "./ui";
+import { CollectionCombo, TagCombo } from "./combobox";
 import { cn } from "@/lib/utils";
 
 const empty: ActionState = {};
 const emptyImport: ImportState = {};
-const COLLECTIONS_LIST_ID = "collection-suggestions";
-
-/** Shared collection input with autocomplete from existing collections. */
-function CollectionField({
-  id,
-  defaultValue = "",
-}: {
-  id: string;
-  defaultValue?: string;
-}) {
-  return (
-    <div>
-      <Label htmlFor={id}>Collection (optional)</Label>
-      <Input
-        id={id}
-        name="collection"
-        list={COLLECTIONS_LIST_ID}
-        placeholder="e.g. Web dev, Recipes, Inspiration"
-        defaultValue={defaultValue}
-      />
-    </div>
-  );
-}
 
 export function AddSheet({
   open,
   onClose,
   userId,
   initialUrl = null,
-  collections = [],
+  collections,
+  tags,
+  onSaved,
 }: {
   open: boolean;
   onClose: () => void;
   userId: string;
   initialUrl?: string | null;
-  collections?: string[];
+  collections: Collection[];
+  tags: Tag[];
+  onSaved: () => void;
 }) {
   const [tab, setTab] = useState<"link" | "image" | "import">("link");
 
-  // Lock body scroll while the sheet is open.
   useEffect(() => {
     if (open) document.body.style.overflow = "hidden";
     return () => {
@@ -76,14 +57,11 @@ export function AddSheet({
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center">
-      {/* Backdrop */}
       <div
         className="absolute inset-0 bg-black/40 backdrop-blur-sm"
         onClick={onClose}
         aria-hidden
       />
-
-      {/* Sheet */}
       <div className="relative z-10 flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-t-3xl border border-border bg-surface shadow-xl sm:rounded-3xl">
         <div className="flex items-center justify-between border-b border-border px-5 py-4">
           <h2 className="text-base font-semibold">Add to archive</h2>
@@ -96,7 +74,6 @@ export function AddSheet({
           </button>
         </div>
 
-        {/* Tabs */}
         <div className="flex gap-2 px-5 pt-4">
           <TabButton active={tab === "link"} onClick={() => setTab("link")}>
             <Link2 className="h-4 w-4" /> Link
@@ -110,18 +87,29 @@ export function AddSheet({
         </div>
 
         <div className="overflow-y-auto px-5 py-4">
-          {tab === "link" && <LinkForm onDone={onClose} initialUrl={initialUrl} />}
-          {tab === "image" && <ImageForm onDone={onClose} userId={userId} />}
-          {tab === "import" && <ImportForm />}
+          {tab === "link" && (
+            <LinkForm
+              onDone={onClose}
+              onSaved={onSaved}
+              initialUrl={initialUrl}
+              collections={collections}
+              tags={tags}
+            />
+          )}
+          {tab === "image" && (
+            <ImageForm
+              onDone={onClose}
+              onSaved={onSaved}
+              userId={userId}
+              collections={collections}
+              tags={tags}
+            />
+          )}
+          {tab === "import" && (
+            <ImportForm onSaved={onSaved} collections={collections} />
+          )}
         </div>
       </div>
-
-      {/* Shared autocomplete source for collection fields. */}
-      <datalist id={COLLECTIONS_LIST_ID}>
-        {collections.map((c) => (
-          <option key={c} value={c} />
-        ))}
-      </datalist>
     </div>
   );
 }
@@ -140,9 +128,7 @@ function TabButton({
       onClick={onClick}
       className={cn(
         "inline-flex flex-1 items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-medium transition",
-        active
-          ? "bg-accent text-accent-foreground"
-          : "bg-surface-muted text-muted"
+        active ? "bg-accent text-accent-foreground" : "bg-surface-muted text-muted"
       )}
     >
       {children}
@@ -154,12 +140,17 @@ function TabButton({
 
 function LinkForm({
   onDone,
+  onSaved,
   initialUrl = null,
+  collections,
+  tags,
 }: {
   onDone: () => void;
+  onSaved: () => void;
   initialUrl?: string | null;
+  collections: Collection[];
+  tags: Tag[];
 }) {
-  const router = useRouter();
   const [state, formAction, pending] = useActionState(createLink, empty);
   const [url, setUrl] = useState(initialUrl ?? "");
   const [preview, setPreview] = useState<PreviewResult | null>(null);
@@ -168,10 +159,13 @@ function LinkForm({
 
   useEffect(() => {
     if (state.success) {
-      router.refresh();
+      toast.success("Link saved");
+      onSaved();
       onDone();
+    } else if (state.error) {
+      toast.error(state.error);
     }
-  }, [state.success, router, onDone]);
+  }, [state, onSaved, onDone]);
 
   const loadPreview = useCallback(async (value: string) => {
     const u = value.trim();
@@ -193,8 +187,6 @@ function LinkForm({
     }
   }, []);
 
-  // When opened via a share/?add= link, fetch the preview automatically.
-  // Deferred so the network kickoff isn't a synchronous effect side effect.
   useEffect(() => {
     if (!initialUrl) return;
     const t = setTimeout(() => loadPreview(initialUrl), 0);
@@ -249,10 +241,7 @@ function LinkForm({
               />
             ) : meta ? (
               <div className="flex h-full w-full items-center justify-center">
-                <meta.Icon
-                  className="h-6 w-6"
-                  style={{ color: meta.color }}
-                />
+                <meta.Icon className="h-6 w-6" style={{ color: meta.color }} />
               </div>
             ) : null}
           </div>
@@ -271,18 +260,9 @@ function LinkForm({
         </div>
       )}
 
-      {/* Hidden fields carry the fetched preview into the action. */}
       <input type="hidden" name="provider" value={preview?.provider ?? ""} />
-      <input
-        type="hidden"
-        name="thumbnail_url"
-        value={preview?.thumbnailUrl ?? ""}
-      />
-      <input
-        type="hidden"
-        name="description"
-        value={preview?.description ?? ""}
-      />
+      <input type="hidden" name="thumbnail_url" value={preview?.thumbnailUrl ?? ""} />
+      <input type="hidden" name="description" value={preview?.description ?? ""} />
       <input type="hidden" name="embed_html" value={preview?.embedHtml ?? ""} />
 
       <div>
@@ -296,24 +276,13 @@ function LinkForm({
         />
       </div>
 
-      <div>
-        <Label htmlFor="tags">Tags (comma separated)</Label>
-        <Input id="tags" name="tags" placeholder="learning, design, coding" />
-      </div>
-
-      <CollectionField id="collection" />
+      <TagCombo tags={tags} />
+      <CollectionCombo collections={collections} />
 
       <div>
         <Label htmlFor="notes">Notes</Label>
-        <Textarea
-          id="notes"
-          name="notes"
-          rows={3}
-          placeholder="Why are you saving this?"
-        />
+        <Textarea id="notes" name="notes" rows={3} placeholder="Why are you saving this?" />
       </div>
-
-      {state.error && <p className="text-sm text-danger">{state.error}</p>}
 
       <Button type="submit" disabled={pending}>
         {pending && <Loader2 className="h-4 w-4 animate-spin" />}
@@ -327,16 +296,20 @@ function LinkForm({
 
 function ImageForm({
   onDone,
+  onSaved,
   userId,
+  collections,
+  tags,
 }: {
   onDone: () => void;
+  onSaved: () => void;
   userId: string;
+  collections: Collection[];
+  tags: Tag[];
 }) {
-  const router = useRouter();
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   function onPick(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0] ?? null;
@@ -347,11 +320,10 @@ function ImageForm({
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!file) {
-      setError("Choose an image first");
+      toast.error("Choose an image first");
       return;
     }
     setBusy(true);
-    setError(null);
 
     const supabase = createClient();
     const ext = file.name.split(".").pop()?.toLowerCase() || "png";
@@ -362,7 +334,7 @@ function ImageForm({
       .upload(path, file, { contentType: file.type, upsert: false });
 
     if (upErr) {
-      setError(upErr.message);
+      toast.error(upErr.message);
       setBusy(false);
       return;
     }
@@ -373,10 +345,11 @@ function ImageForm({
 
     setBusy(false);
     if (result.error) {
-      setError(result.error);
+      toast.error(result.error);
       return;
     }
-    router.refresh();
+    toast.success("Image saved");
+    onSaved();
     onDone();
   }
 
@@ -387,23 +360,14 @@ function ImageForm({
         <label className="flex aspect-video w-full cursor-pointer flex-col items-center justify-center gap-2 overflow-hidden rounded-xl border border-dashed border-border bg-surface-muted text-muted transition hover:border-accent">
           {previewUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={previewUrl}
-              alt=""
-              className="h-full w-full object-contain"
-            />
+            <img src={previewUrl} alt="" className="h-full w-full object-contain" />
           ) : (
             <>
               <ImagePlus className="h-8 w-8" />
               <span className="text-sm">Tap to choose an image</span>
             </>
           )}
-          <input
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onChange={onPick}
-          />
+          <input type="file" accept="image/*" className="hidden" onChange={onPick} />
         </label>
       </div>
 
@@ -412,24 +376,13 @@ function ImageForm({
         <Input id="img-title" name="title" placeholder="Give it a name" />
       </div>
 
-      <div>
-        <Label htmlFor="img-tags">Tags (comma separated)</Label>
-        <Input id="img-tags" name="tags" placeholder="reference, ui, idea" />
-      </div>
-
-      <CollectionField id="img-collection" />
+      <TagCombo tags={tags} />
+      <CollectionCombo collections={collections} />
 
       <div>
         <Label htmlFor="img-notes">Notes</Label>
-        <Textarea
-          id="img-notes"
-          name="notes"
-          rows={3}
-          placeholder="Add a note"
-        />
+        <Textarea id="img-notes" name="notes" rows={3} placeholder="Add a note" />
       </div>
-
-      {error && <p className="text-sm text-danger">{error}</p>}
 
       <Button type="submit" disabled={busy}>
         {busy && <Loader2 className="h-4 w-4 animate-spin" />}
@@ -441,20 +394,33 @@ function ImageForm({
 
 // ---- Import form (bulk paste, e.g. a WhatsApp export) ----
 
-function ImportForm() {
-  const router = useRouter();
+function ImportForm({
+  onSaved,
+  collections,
+}: {
+  onSaved: () => void;
+  collections: Collection[];
+}) {
   const [state, formAction, pending] = useActionState(importLinks, emptyImport);
 
   useEffect(() => {
-    if (state.imported && state.imported > 0) router.refresh();
-  }, [state.imported, router]);
+    if (state.imported !== undefined && !state.error) {
+      toast.success(
+        `Imported ${state.imported} link${state.imported === 1 ? "" : "s"}` +
+          (state.skipped ? ` · skipped ${state.skipped} duplicate(s)` : "")
+      );
+      onSaved();
+    } else if (state.error) {
+      toast.error(state.error);
+    }
+  }, [state, onSaved]);
 
   return (
     <form action={formAction} className="flex flex-col gap-4">
       <p className="text-sm text-muted">
         Paste any text containing links — for example, export a WhatsApp chat
-        (⋮ → More → Export chat → Without media) and paste it here. Every link
-        is detected, previewed, and saved. Duplicates are skipped.
+        (⋮ → More → Export chat → Without media) and paste it here. Every link is
+        detected, previewed, and saved. Duplicates are skipped.
       </p>
 
       <div>
@@ -469,15 +435,7 @@ function ImportForm() {
         />
       </div>
 
-      <CollectionField id="import-collection" />
-
-      {state.error && <p className="text-sm text-danger">{state.error}</p>}
-      {state.imported !== undefined && !state.error && (
-        <p className="text-sm" style={{ color: "var(--accent)" }}>
-          Imported {state.imported} link{state.imported === 1 ? "" : "s"}
-          {state.skipped ? ` · skipped ${state.skipped} duplicate(s)` : ""}.
-        </p>
-      )}
+      <CollectionCombo collections={collections} />
 
       <Button type="submit" disabled={pending}>
         {pending && <Loader2 className="h-4 w-4 animate-spin" />}

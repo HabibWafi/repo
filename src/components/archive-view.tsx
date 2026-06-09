@@ -1,119 +1,262 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Search,
   Plus,
-  Star,
+  Menu,
+  X,
+  Loader2,
+  CheckSquare,
+  Trash2,
   Link2,
   Image as ImageIcon,
   LayoutGrid,
-  Folder,
 } from "lucide-react";
-import type { ItemView } from "@/lib/types";
+import { toast } from "sonner";
+import type { Collection, ItemView, Tag } from "@/lib/types";
+import {
+  queryItems,
+  deleteItems,
+  moveItemsToCollection,
+  type QueryFilters,
+} from "@/lib/actions";
 import { ItemCard } from "./item-card";
 import { AddSheet } from "./add-sheet";
-import { Input } from "./ui";
+import { ManageSheet } from "./manage-sheet";
+import { Sidebar } from "./sidebar";
+import { Button, Input } from "./ui";
 import { cn } from "@/lib/utils";
 
-type Filter = "all" | "link" | "image" | "favorites";
+type TypeFilter = "all" | "link" | "image";
 
 export function ArchiveView({
-  items,
+  initialItems,
+  initialHasMore,
+  collections,
+  tags,
   userId,
   initialUrl = null,
 }: {
-  items: ItemView[];
+  initialItems: ItemView[];
+  initialHasMore: boolean;
+  collections: Collection[];
+  tags: Tag[];
   userId: string;
   initialUrl?: string | null;
 }) {
-  const [query, setQuery] = useState("");
-  const [filter, setFilter] = useState<Filter>("all");
-  const [activeTag, setActiveTag] = useState<string | null>(null);
-  const [activeCollection, setActiveCollection] = useState<string | null>(null);
-  // Auto-open the add sheet when arrived via a share / ?add= link.
-  const [addOpen, setAddOpen] = useState(Boolean(initialUrl));
   const router = useRouter();
 
-  // Strip the ?add= param so a refresh doesn't re-trigger the share flow.
+  // Filters
+  const [query, setQuery] = useState("");
+  const [debounced, setDebounced] = useState("");
+  const [type, setType] = useState<TypeFilter>("all");
+  const [activeCollection, setActiveCollection] = useState<string | null>(null);
+  const [favorites, setFavorites] = useState(false);
+
+  // Data
+  const [items, setItems] = useState<ItemView[]>(initialItems);
+  const [page, setPage] = useState(0);
+  const [hasMore, setHasMore] = useState(initialHasMore);
+  const [loading, setLoading] = useState(false);
+
+  // UI
+  const [addOpen, setAddOpen] = useState(Boolean(initialUrl));
+  const [manageOpen, setManageOpen] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [selecting, setSelecting] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  const firstRender = useRef(true);
+
+  const filters = useMemo<QueryFilters>(
+    () => ({
+      collectionId: activeCollection,
+      favorites,
+      type,
+      q: debounced,
+    }),
+    [activeCollection, favorites, type, debounced]
+  );
+
+  // Debounce the search box.
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(query), 300);
+    return () => clearTimeout(t);
+  }, [query]);
+
+  // Strip the ?add= share param after opening.
   useEffect(() => {
     if (initialUrl) router.replace("/");
   }, [initialUrl, router]);
 
-  const allTags = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const it of items)
-      for (const t of it.tags) counts.set(t, (counts.get(t) ?? 0) + 1);
-    return [...counts.entries()]
-      .sort((a, b) => b[1] - a[1])
-      .map(([t]) => t);
-  }, [items]);
-
-  const allCollections = useMemo(() => {
-    const set = new Set<string>();
-    for (const it of items) if (it.collection) set.add(it.collection);
-    return [...set].sort((a, b) => a.localeCompare(b));
-  }, [items]);
-
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return items.filter((it) => {
-      if (filter === "favorites" && !it.is_favorite) return false;
-      if (filter === "link" && it.type !== "link") return false;
-      if (filter === "image" && it.type !== "image") return false;
-      if (activeCollection && it.collection !== activeCollection) return false;
-      if (activeTag && !it.tags.includes(activeTag)) return false;
-      if (q) {
-        const hay = [
-          it.title,
-          it.description,
-          it.notes,
-          it.url,
-          it.collection,
-          ...it.tags,
-        ]
-          .filter(Boolean)
-          .join(" ")
-          .toLowerCase();
-        if (!hay.includes(q)) return false;
-      }
-      return true;
+  // Re-query whenever a filter changes (skip the very first mount — the server
+  // already provided page 0 of the default view).
+  useEffect(() => {
+    if (firstRender.current) {
+      firstRender.current = false;
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    queryItems({ ...filters, page: 0 }).then((res) => {
+      if (cancelled) return;
+      setItems(res.items);
+      setHasMore(res.hasMore);
+      setPage(0);
+      setLoading(false);
     });
-  }, [items, query, filter, activeTag, activeCollection]);
+    return () => {
+      cancelled = true;
+    };
+  }, [filters]);
 
-  const filterTabs: { key: Filter; label: string; Icon: typeof Star }[] = [
+  const reload = useCallback(async () => {
+    setLoading(true);
+    const res = await queryItems({ ...filters, page: 0 });
+    setItems(res.items);
+    setHasMore(res.hasMore);
+    setPage(0);
+    setLoading(false);
+  }, [filters]);
+
+  async function loadMore() {
+    const next = page + 1;
+    setLoading(true);
+    const res = await queryItems({ ...filters, page: next });
+    setItems((prev) => [...prev, ...res.items]);
+    setHasMore(res.hasMore);
+    setPage(next);
+    setLoading(false);
+  }
+
+  // Selection helpers
+  function toggleSelect(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+  function exitSelect() {
+    setSelecting(false);
+    setSelected(new Set());
+  }
+
+  async function bulkDelete() {
+    const ids = [...selected];
+    if (!ids.length) return;
+    if (!confirm(`Delete ${ids.length} item(s)? This cannot be undone.`)) return;
+    setLoading(true);
+    const r = await deleteItems(ids);
+    if (r.error) toast.error(r.error);
+    else toast.success(`Deleted ${ids.length} item(s)`);
+    exitSelect();
+    await reload();
+  }
+
+  async function bulkMove(collectionId: string | null) {
+    const ids = [...selected];
+    if (!ids.length) return;
+    setLoading(true);
+    const r = await moveItemsToCollection(ids, collectionId);
+    if (r.error) toast.error(r.error);
+    else toast.success(`Moved ${ids.length} item(s)`);
+    exitSelect();
+    await reload();
+  }
+
+  function selectAll(fn: () => void) {
+    fn();
+    setDrawerOpen(false);
+    exitSelect();
+  }
+
+  const typeTabs: { key: TypeFilter; label: string; Icon: typeof LayoutGrid }[] = [
     { key: "all", label: "All", Icon: LayoutGrid },
     { key: "link", label: "Links", Icon: Link2 },
     { key: "image", label: "Images", Icon: ImageIcon },
-    { key: "favorites", label: "Favorites", Icon: Star },
   ];
 
+  const heading = favorites
+    ? "Favorites"
+    : activeCollection
+    ? collections.find((c) => c.id === activeCollection)?.name ?? "Collection"
+    : "All items";
+
+  const sidebar = (
+    <Sidebar
+      collections={collections}
+      activeCollection={activeCollection}
+      favorites={favorites}
+      onAll={() => selectAll(() => { setActiveCollection(null); setFavorites(false); })}
+      onFavorites={() => selectAll(() => { setFavorites(true); setActiveCollection(null); })}
+      onCollection={(id) =>
+        selectAll(() => { setActiveCollection(id); setFavorites(false); })
+      }
+      onManage={() => {
+        setDrawerOpen(false);
+        setManageOpen(true);
+      }}
+    />
+  );
+
   return (
-    <>
-      {/* Sticky search + filters */}
-      <div className="sticky top-0 z-30 border-b border-border bg-background/80 backdrop-blur">
-        <div className="mx-auto max-w-5xl px-4 py-3">
-          <div className="relative">
-            <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
-            <Input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search your archive…"
-              className="pl-10"
-              inputMode="search"
-            />
+    <div className="mx-auto flex max-w-6xl">
+      {/* Desktop rail */}
+      <aside className="sticky top-0 hidden h-[100dvh] w-60 shrink-0 overflow-y-auto border-r border-border p-4 lg:block">
+        {sidebar}
+      </aside>
+
+      {/* Main column */}
+      <div className="min-w-0 flex-1">
+        {/* Toolbar */}
+        <div className="sticky top-0 z-30 border-b border-border bg-background/80 backdrop-blur">
+          <div className="flex items-center gap-2 px-4 py-3">
+            <button
+              type="button"
+              onClick={() => setDrawerOpen(true)}
+              aria-label="Open collections"
+              className="rounded-lg p-2 text-muted hover:bg-surface-muted lg:hidden"
+            >
+              <Menu className="h-5 w-5" />
+            </button>
+            <div className="relative flex-1">
+              <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
+              <Input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search your archive…"
+                className="pl-10"
+                inputMode="search"
+              />
+            </div>
+            <button
+              type="button"
+              onClick={() => (selecting ? exitSelect() : setSelecting(true))}
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition",
+                selecting
+                  ? "bg-accent text-accent-foreground"
+                  : "text-muted hover:bg-surface-muted"
+              )}
+            >
+              <CheckSquare className="h-4 w-4" />
+              <span className="hidden sm:inline">{selecting ? "Cancel" : "Select"}</span>
+            </button>
           </div>
 
-          <div className="no-scrollbar mt-3 flex gap-2 overflow-x-auto">
-            {filterTabs.map(({ key, label, Icon }) => (
+          <div className="no-scrollbar flex items-center gap-2 overflow-x-auto px-4 pb-3">
+            {typeTabs.map(({ key, label, Icon }) => (
               <button
                 key={key}
-                onClick={() => setFilter(key)}
+                onClick={() => setType(key)}
                 className={cn(
                   "inline-flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-medium transition",
-                  filter === key
-                    ? "bg-accent text-accent-foreground"
+                  type === key
+                    ? "bg-foreground text-background"
                     : "bg-surface-muted text-muted"
                 )}
               >
@@ -122,105 +265,157 @@ export function ArchiveView({
               </button>
             ))}
           </div>
-
-          {allCollections.length > 0 && (
-            <div className="no-scrollbar mt-2 flex gap-2 overflow-x-auto">
-              {allCollections.map((c) => {
-                const active = activeCollection === c;
-                return (
-                  <button
-                    key={c}
-                    onClick={() => setActiveCollection(active ? null : c)}
-                    className={cn(
-                      "inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition",
-                      active
-                        ? "bg-accent text-accent-foreground"
-                        : "bg-surface-muted text-muted"
-                    )}
-                  >
-                    <Folder className="h-3 w-3" />
-                    {c}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-
-          {allTags.length > 0 && (
-            <div className="no-scrollbar mt-2 flex gap-2 overflow-x-auto">
-              {activeTag && (
-                <button
-                  onClick={() => setActiveTag(null)}
-                  className="shrink-0 rounded-full bg-accent/10 px-3 py-1 text-xs font-medium text-accent"
-                >
-                  clear ✕
-                </button>
-              )}
-              {allTags.map((t) => (
-                <button
-                  key={t}
-                  onClick={() => setActiveTag(activeTag === t ? null : t)}
-                  className={cn(
-                    "shrink-0 rounded-full px-3 py-1 text-xs font-medium transition",
-                    activeTag === t
-                      ? "bg-foreground text-background"
-                      : "bg-surface-muted text-muted"
-                  )}
-                >
-                  #{t}
-                </button>
-              ))}
-            </div>
-          )}
         </div>
+
+        {/* Content */}
+        <main className="px-4 py-5 pb-28">
+          <div className="mb-4 flex items-center justify-between">
+            <h1 className="text-lg font-semibold tracking-tight">{heading}</h1>
+            {loading && <Loader2 className="h-4 w-4 animate-spin text-muted" />}
+          </div>
+
+          {items.length === 0 && !loading ? (
+            <EmptyState onAdd={() => setAddOpen(true)} />
+          ) : (
+            <>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                {items.map((it) => (
+                  <ItemCard
+                    key={it.id}
+                    item={it}
+                    selectable={selecting}
+                    selected={selected.has(it.id)}
+                    onToggleSelect={toggleSelect}
+                  />
+                ))}
+              </div>
+
+              {hasMore && (
+                <div className="mt-6 flex justify-center">
+                  <Button variant="secondary" onClick={loadMore} disabled={loading}>
+                    {loading && <Loader2 className="h-4 w-4 animate-spin" />}
+                    Load more
+                  </Button>
+                </div>
+              )}
+            </>
+          )}
+        </main>
       </div>
 
-      {/* Grid */}
-      <main className="mx-auto max-w-5xl px-4 py-5 pb-28">
-        {filtered.length === 0 ? (
-          <EmptyState hasItems={items.length > 0} />
-        ) : (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {filtered.map((it) => (
-              <ItemCard key={it.id} item={it} />
-            ))}
+      {/* Mobile drawer */}
+      {drawerOpen && (
+        <div className="fixed inset-0 z-50 lg:hidden">
+          <div
+            className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+            onClick={() => setDrawerOpen(false)}
+            aria-hidden
+          />
+          <div className="absolute left-0 top-0 h-full w-72 max-w-[80%] overflow-y-auto border-r border-border bg-surface p-4">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-base font-semibold">Browse</span>
+              <button
+                onClick={() => setDrawerOpen(false)}
+                aria-label="Close"
+                className="rounded-full p-1.5 text-muted hover:bg-surface-muted"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            {sidebar}
           </div>
-        )}
-      </main>
+        </div>
+      )}
 
-      {/* Floating add button (thumb-reachable) */}
-      <button
-        onClick={() => setAddOpen(true)}
-        aria-label="Add new item"
-        className="fixed bottom-0 right-0 z-40 mr-5 inline-flex h-14 w-14 items-center justify-center rounded-full bg-accent text-accent-foreground shadow-lg transition hover:scale-105 active:scale-95"
-        style={{ marginBottom: "calc(env(safe-area-inset-bottom) + 1.25rem)" }}
-      >
-        <Plus className="h-7 w-7" />
-      </button>
+      {/* FAB (hidden in selection mode) */}
+      {!selecting && (
+        <button
+          onClick={() => setAddOpen(true)}
+          aria-label="Add new item"
+          className="fixed bottom-0 right-0 z-40 mr-5 inline-flex h-14 w-14 items-center justify-center rounded-full bg-accent text-accent-foreground shadow-lg transition hover:scale-105 active:scale-95"
+          style={{ marginBottom: "calc(env(safe-area-inset-bottom) + 1.25rem)" }}
+        >
+          <Plus className="h-7 w-7" />
+        </button>
+      )}
+
+      {/* Selection action bar */}
+      {selecting && (
+        <div
+          className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-surface/95 backdrop-blur"
+          style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 0.5rem)" }}
+        >
+          <div className="mx-auto flex max-w-3xl items-center gap-2 px-4 py-3">
+            <span className="text-sm font-medium">{selected.size} selected</span>
+            <div className="flex-1" />
+            <select
+              aria-label="Move to collection"
+              defaultValue=""
+              disabled={selected.size === 0 || loading}
+              onChange={(e) => {
+                const v = e.target.value;
+                e.target.value = "";
+                if (v === "__none") bulkMove(null);
+                else if (v) bulkMove(v);
+              }}
+              className="h-10 rounded-lg border border-border bg-surface px-3 text-sm"
+            >
+              <option value="" disabled>
+                Move to…
+              </option>
+              {collections.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+              <option value="__none">— Remove from collection</option>
+            </select>
+            <Button
+              variant="danger"
+              size="sm"
+              onClick={bulkDelete}
+              disabled={selected.size === 0 || loading}
+            >
+              <Trash2 className="h-4 w-4" /> Delete
+            </Button>
+          </div>
+        </div>
+      )}
 
       <AddSheet
         open={addOpen}
         onClose={() => setAddOpen(false)}
         userId={userId}
         initialUrl={initialUrl}
-        collections={allCollections}
+        collections={collections}
+        tags={tags}
+        onSaved={() => {
+          router.refresh();
+          reload();
+        }}
       />
-    </>
+
+      <ManageSheet
+        open={manageOpen}
+        onClose={() => setManageOpen(false)}
+        collections={collections}
+        tags={tags}
+      />
+    </div>
   );
 }
 
-function EmptyState({ hasItems }: { hasItems: boolean }) {
+function EmptyState({ onAdd }: { onAdd: () => void }) {
   return (
-    <div className="flex flex-col items-center justify-center gap-2 py-24 text-center">
+    <div className="flex flex-col items-center justify-center gap-3 py-24 text-center">
       <LayoutGrid className="h-10 w-10 text-muted" />
-      <p className="text-sm font-medium text-foreground">
-        {hasItems ? "No matches" : "Your archive is empty"}
-      </p>
+      <p className="text-sm font-medium text-foreground">Nothing here yet</p>
       <p className="max-w-xs text-sm text-muted">
-        {hasItems
-          ? "Try a different search or filter."
-          : "Tap the + button to save your first link or screenshot."}
+        Save your first link or screenshot — it’ll show up here newest-first.
       </p>
+      <Button onClick={onAdd}>
+        <Plus className="h-4 w-4" /> Add item
+      </Button>
     </div>
   );
 }

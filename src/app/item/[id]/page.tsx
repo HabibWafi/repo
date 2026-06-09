@@ -2,13 +2,13 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { ArrowLeft, ExternalLink } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
+import { toItemViews } from "@/lib/items";
 import { ItemEditor } from "@/components/item-editor";
 import { FavoriteButton } from "@/components/favorite-button";
+import { PinButton } from "@/components/pin-button";
 import { PROVIDER_META } from "@/lib/providers";
 import { formatDate, hostnameOf } from "@/lib/utils";
-import type { Item, ItemView } from "@/lib/types";
-
-const BUCKET = "archive";
+import type { Collection, Tag } from "@/lib/types";
 
 export default async function ItemPage({
   params,
@@ -24,21 +24,19 @@ export default async function ItemPage({
 
   const { data } = await supabase
     .from("items")
-    .select("*")
+    .select("*, collection:collections(name)")
     .eq("id", id)
     .single();
   if (!data) notFound();
 
-  const item = data as Item;
-  let displayThumb: string | null = item.thumbnail_url;
-  if (item.type === "image" && item.image_path) {
-    const { data: signed } = await supabase.storage
-      .from(BUCKET)
-      .createSignedUrl(item.image_path, 60 * 60);
-    displayThumb = signed?.signedUrl ?? null;
-  }
-  const view: ItemView = { ...item, displayThumb };
-  const meta = PROVIDER_META[item.provider];
+  const [view] = await toItemViews(supabase, [data]);
+  const [{ data: collectionRows }, { data: tagRows }] = await Promise.all([
+    supabase.from("collections").select("id, name").order("name"),
+    supabase.from("tags").select("id, name").order("name"),
+  ]);
+  const collections = (collectionRows ?? []) as Collection[];
+  const tags = (tagRows ?? []) as Tag[];
+  const meta = PROVIDER_META[view.provider];
 
   return (
     <div className="mx-auto min-h-full max-w-2xl px-4 py-5">
@@ -50,10 +48,12 @@ export default async function ItemPage({
           <ArrowLeft className="h-4 w-4" />
           Back
         </Link>
-        <FavoriteButton id={item.id} initial={item.is_favorite} />
+        <div className="flex gap-1.5">
+          <PinButton id={view.id} initial={view.is_pinned} />
+          <FavoriteButton id={view.id} initial={view.is_favorite} />
+        </div>
       </div>
 
-      {/* Media */}
       <div className="relative mb-5 overflow-hidden rounded-card border border-border bg-surface-muted">
         <div className="relative aspect-video w-full">
           {view.displayThumb ? (
@@ -69,31 +69,29 @@ export default async function ItemPage({
             </div>
           )}
         </div>
-        <span
-          className="absolute left-3 top-3 inline-flex items-center gap-1.5 rounded-full bg-surface/90 px-2.5 py-1 text-xs font-medium backdrop-blur"
-        >
+        <span className="absolute left-3 top-3 inline-flex items-center gap-1.5 rounded-full bg-surface/90 px-2.5 py-1 text-xs font-medium backdrop-blur">
           <meta.Icon className="h-3.5 w-3.5" style={{ color: meta.color }} />
           {meta.label}
         </span>
       </div>
 
       <div className="mb-5 flex flex-col gap-2">
-        {item.url && (
+        {view.url && (
           <a
-            href={item.url}
+            href={view.url}
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex w-fit items-center gap-1.5 rounded-lg bg-surface-muted px-3 py-2 text-sm font-medium text-accent transition hover:opacity-80"
           >
             <ExternalLink className="h-4 w-4" />
             Open on {meta.label}
-            <span className="text-muted">· {hostnameOf(item.url)}</span>
+            <span className="text-muted">· {hostnameOf(view.url)}</span>
           </a>
         )}
-        <p className="text-xs text-muted">Saved {formatDate(item.created_at)}</p>
+        <p className="text-xs text-muted">Saved {formatDate(view.created_at)}</p>
       </div>
 
-      <ItemEditor item={view} />
+      <ItemEditor item={view} collections={collections} tags={tags} />
     </div>
   );
 }

@@ -25,16 +25,34 @@ export interface Item {
   thumbnail_url: string | null;
   image_path: string | null;
   tags: string[];
-  collection: string | null;
+  collection_id: string | null;
   is_favorite: boolean;
+  is_pinned: boolean;
   embed_html: string | null;
   metadata: Record<string, unknown>;
   created_at: string;
   updated_at: string;
 }
 
-/** An item enriched with a ready-to-render thumbnail URL (signed for images). */
-export type ItemView = Item & { displayThumb: string | null };
+/** A collection (folder) from the catalog. */
+export interface Collection {
+  id: string;
+  name: string;
+  count?: number;
+}
+
+/** A tag from the catalog. */
+export interface Tag {
+  id: string;
+  name: string;
+  count?: number;
+}
+
+/** An item enriched for rendering: signed thumbnail + resolved collection name. */
+export type ItemView = Item & {
+  displayThumb: string | null;
+  collection_name: string | null;
+};
 
 /** Normalized preview returned by /api/preview. */
 export interface PreviewResult {
@@ -67,7 +85,11 @@ export function parseTags(raw: FormDataEntryValue | null): string[] {
   );
 }
 
-const collectionSchema = z.string().trim().max(120).optional().nullable();
+// Collection comes in as either an existing id or a new free-typed name.
+const collectionRefSchema = {
+  collection_id: z.string().uuid().optional().nullable().or(z.literal("")),
+  new_collection: z.string().trim().max(120).optional().nullable(),
+};
 
 export const createLinkSchema = z.object({
   url: urlSchema,
@@ -78,7 +100,7 @@ export const createLinkSchema = z.object({
   provider: z.enum(PROVIDERS).optional(),
   embed_html: z.string().optional().nullable(),
   tags: z.array(z.string()).default([]),
-  collection: collectionSchema,
+  ...collectionRefSchema,
 });
 
 export const updateItemSchema = z.object({
@@ -87,8 +109,13 @@ export const updateItemSchema = z.object({
   description: z.string().trim().max(2000).optional().nullable(),
   notes: z.string().trim().max(5000).optional().nullable(),
   tags: z.array(z.string()).default([]),
-  collection: collectionSchema,
+  ...collectionRefSchema,
 });
+
+/** Normalize a free-typed name (tag or collection) for storage/matching. */
+export function normalizeName(raw: string): string {
+  return raw.trim().replace(/\s+/g, " ");
+}
 
 /** Extract unique http(s) URLs from arbitrary pasted text (e.g. a WhatsApp export). */
 export function extractUrls(text: string): string[] {

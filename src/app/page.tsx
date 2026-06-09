@@ -1,10 +1,9 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { toItemViews, PAGE_SIZE } from "@/lib/items";
 import { Header } from "@/components/header";
 import { ArchiveView } from "@/components/archive-view";
-import type { Item, ItemView } from "@/lib/types";
-
-const BUCKET = "archive";
+import type { Collection, Tag } from "@/lib/types";
 
 export default async function HomePage({
   searchParams,
@@ -18,40 +17,55 @@ export default async function HomePage({
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const { data } = await supabase
+  // First page of items (pinned first, then newest).
+  const { data: itemRows } = await supabase
     .from("items")
-    .select("*")
-    .order("created_at", { ascending: false });
+    .select("*, collection:collections(name)")
+    .order("is_pinned", { ascending: false })
+    .order("created_at", { ascending: false })
+    .range(0, PAGE_SIZE - 1);
+  const initialItems = await toItemViews(supabase, itemRows ?? []);
+  const initialHasMore = (itemRows?.length ?? 0) === PAGE_SIZE;
 
-  const items = (data ?? []) as Item[];
+  // Catalogs + counts (light select of just the columns we tally).
+  const [{ data: collectionRows }, { data: tagRows }, { data: countRows }] =
+    await Promise.all([
+      supabase.from("collections").select("id, name").order("name"),
+      supabase.from("tags").select("id, name").order("name"),
+      supabase.from("items").select("collection_id, tags"),
+    ]);
 
-  // Sign URLs for stored images so private files render in <img>.
-  const imagePaths = items
-    .filter((i) => i.type === "image" && i.image_path)
-    .map((i) => i.image_path as string);
-
-  const signedMap = new Map<string, string>();
-  if (imagePaths.length) {
-    const { data: signed } = await supabase.storage
-      .from(BUCKET)
-      .createSignedUrls(imagePaths, 60 * 60);
-    for (const s of signed ?? []) {
-      if (s.signedUrl && s.path) signedMap.set(s.path, s.signedUrl);
-    }
+  const collCount = new Map<string, number>();
+  const tagCount = new Map<string, number>();
+  for (const r of countRows ?? []) {
+    if (r.collection_id)
+      collCount.set(r.collection_id, (collCount.get(r.collection_id) ?? 0) + 1);
+    for (const t of (r.tags as string[] | null) ?? [])
+      tagCount.set(t, (tagCount.get(t) ?? 0) + 1);
   }
 
-  const views: ItemView[] = items.map((i) => ({
-    ...i,
-    displayThumb:
-      i.type === "image" && i.image_path
-        ? signedMap.get(i.image_path) ?? null
-        : i.thumbnail_url,
+  const collections: Collection[] = (collectionRows ?? []).map((c) => ({
+    id: c.id as string,
+    name: c.name as string,
+    count: collCount.get(c.id as string) ?? 0,
+  }));
+  const tags: Tag[] = (tagRows ?? []).map((t) => ({
+    id: t.id as string,
+    name: t.name as string,
+    count: tagCount.get(t.name as string) ?? 0,
   }));
 
   return (
     <div className="min-h-full">
       <Header />
-      <ArchiveView items={views} userId={user.id} initialUrl={add ?? null} />
+      <ArchiveView
+        initialItems={initialItems}
+        initialHasMore={initialHasMore}
+        collections={collections}
+        tags={tags}
+        userId={user.id}
+        initialUrl={add ?? null}
+      />
     </div>
   );
 }

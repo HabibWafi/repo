@@ -24,11 +24,27 @@ export async function signIn(
     return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
   }
 
+  // Surface a clear message if the Supabase env vars never made it into the
+  // build/runtime — otherwise this looks like a wrong password.
+  if (
+    !process.env.NEXT_PUBLIC_SUPABASE_URL ||
+    !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  ) {
+    return {
+      error:
+        "Config error: Supabase URL/key missing. Check the Vercel environment variables and redeploy.",
+    };
+  }
+
   const supabase = await createClient();
   const { error } = await supabase.auth.signInWithPassword(parsed.data);
 
   if (error) {
-    return { error: "Incorrect email or password" };
+    // Show the real reason (e.g. "Invalid login credentials",
+    // "Email not confirmed", "Invalid API key", network errors) instead of a
+    // generic message, so misconfiguration is diagnosable.
+    console.error("signIn failed:", error.status, error.code, error.message);
+    return { error: error.message || "Sign in failed" };
   }
 
   redirect("/");

@@ -1,0 +1,74 @@
+@import "tailwindcss";
+
+/*
+  Elegant, professional neutral palette with a refined indigo accent.
+  Light + dark, driven by prefers-color-scheme.
+*/
+:root {
+  --background: #fafaf9;
+  --surface: #ffffff;
+  --surface-muted: #f5f5f4;
+  --foreground: #1c1917;
+  --muted: #78716c;
+  --border: #e7e5e4;
+  --accent: #4f46e5;
+  --accent-foreground: #ffffff;
+  --danger: #dc2626;
+  --star: #f59e0b;
+  --radius: 0.85rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0c0a09;
+    --surface: #1c1917;
+    --surface-muted: #292524;
+    --foreground: #f5f5f4;
+    --muted: #a8a29e;
+    --border: #292524;
+    --accent: #818cf8;
+    --accent-foreground: #1c1917;
+    --danger: #f87171;
+    --star: #fbbf24;
+  }
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-muted: var(--surface-muted);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-border: var(--border);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-danger: var(--danger);
+  --color-star: var(--star);
+  --font-sans: var(--font-geist-sans);
+  --radius-card: var(--radius);
+}
+
+* {
+  border-color: var(--border);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Respect iOS safe areas for the sticky bottom bar. */
+.pb-safe {
+  padding-bottom: calc(env(safe-area-inset-bottom) + 1rem);
+}
+
+/* Hide scrollbars on the horizontal filter strip. */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}

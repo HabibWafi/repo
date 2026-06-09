@@ -5,10 +5,12 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import {
   createLinkSchema,
+  extractUrls,
   parseTags,
   updateItemSchema,
   type Provider,
 } from "@/lib/types";
+import { fetchPreview } from "@/lib/metadata";
 
 const BUCKET = "archive";
 
@@ -39,6 +41,7 @@ export async function createLink(
     provider: (formData.get("provider") as Provider) || undefined,
     embed_html: emptyToNull(formData.get("embed_html")),
     tags: parseTags(formData.get("tags")),
+    collection: emptyToNull(formData.get("collection")),
   });
 
   if (!parsed.success) {
@@ -56,6 +59,7 @@ export async function createLink(
     thumbnail_url: d.thumbnail_url || null,
     embed_html: d.embed_html,
     tags: d.tags,
+    collection: d.collection,
   });
 
   if (error) return { error: error.message };
@@ -82,6 +86,7 @@ export async function createImage(
     title: emptyToNull(formData.get("title")),
     notes: emptyToNull(formData.get("notes")),
     tags: parseTags(formData.get("tags")),
+    collection: emptyToNull(formData.get("collection")),
   });
 
   if (error) return { error: error.message };
@@ -101,6 +106,7 @@ export async function updateItem(
     description: emptyToNull(formData.get("description")),
     notes: emptyToNull(formData.get("notes")),
     tags: parseTags(formData.get("tags")),
+    collection: emptyToNull(formData.get("collection")),
   });
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
@@ -116,6 +122,68 @@ export async function updateItem(
   revalidatePath("/");
   revalidatePath(`/item/${id}`);
   return { success: true };
+}
+
+export type ImportState = {
+  error?: string;
+  imported?: number;
+  skipped?: number;
+};
+
+const IMPORT_CAP = 40;
+
+/**
+ * Bulk-import links from pasted text (e.g. a WhatsApp chat export). Extracts
+ * every URL, fetches a best-effort preview for each, and inserts them. Skips
+ * URLs already present so re-importing is safe.
+ */
+export async function importLinks(
+  _prev: ImportState,
+  formData: FormData
+): Promise<ImportState> {
+  const { supabase } = await requireUser();
+
+  const text = formData.get("text");
+  const collection = emptyToNull(formData.get("collection"));
+  if (typeof text !== "string" || !text.trim()) {
+    return { error: "Paste some text containing links" };
+  }
+
+  const urls = extractUrls(text);
+  if (urls.length === 0) return { error: "No links found in the text" };
+
+  // Skip URLs we already have so the import is idempotent.
+  const { data: existing } = await supabase
+    .from("items")
+    .select("url")
+    .in("url", urls);
+  const have = new Set((existing ?? []).map((r) => r.url));
+  const fresh = urls.filter((u) => !have.has(u)).slice(0, IMPORT_CAP);
+  const skipped = urls.length - fresh.length;
+
+  if (fresh.length === 0) return { imported: 0, skipped };
+
+  const rows = await Promise.all(
+    fresh.map(async (url) => {
+      const p = await fetchPreview(url);
+      return {
+        type: "link" as const,
+        url,
+        provider: p.provider,
+        title: p.title,
+        description: p.description,
+        thumbnail_url: p.thumbnailUrl,
+        embed_html: p.embedHtml,
+        collection,
+      };
+    })
+  );
+
+  const { error } = await supabase.from("items").insert(rows);
+  if (error) return { error: error.message };
+
+  revalidatePath("/");
+  return { imported: rows.length, skipped };
 }
 
 export async function toggleFavorite(id: string, value: boolean) {

@@ -57,6 +57,16 @@ export function ItemEditor({ item }: { item: ItemView }) {
       </div>
 
       <div>
+        <Label htmlFor="collection">Collection</Label>
+        <Input
+          id="collection"
+          name="collection"
+          defaultValue={item.collection ?? ""}
+          placeholder="e.g. Web dev"
+        />
+      </div>
+
+      <div>
         <Label htmlFor="notes">Notes</Label>
         <Textarea
           id="notes"

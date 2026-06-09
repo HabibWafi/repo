@@ -2,28 +2,67 @@
 
 import { useActionState, useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, X, Link2, ImagePlus, RefreshCw } from "lucide-react";
+import {
+  Loader2,
+  X,
+  Link2,
+  ImagePlus,
+  RefreshCw,
+  ListPlus,
+} from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import { createLink, createImage, type ActionState } from "@/lib/actions";
+import {
+  createLink,
+  createImage,
+  importLinks,
+  type ActionState,
+  type ImportState,
+} from "@/lib/actions";
 import type { PreviewResult } from "@/lib/types";
 import { PROVIDER_META } from "@/lib/providers";
 import { Button, Input, Label, Textarea } from "./ui";
 import { cn } from "@/lib/utils";
 
 const empty: ActionState = {};
+const emptyImport: ImportState = {};
+const COLLECTIONS_LIST_ID = "collection-suggestions";
+
+/** Shared collection input with autocomplete from existing collections. */
+function CollectionField({
+  id,
+  defaultValue = "",
+}: {
+  id: string;
+  defaultValue?: string;
+}) {
+  return (
+    <div>
+      <Label htmlFor={id}>Collection (optional)</Label>
+      <Input
+        id={id}
+        name="collection"
+        list={COLLECTIONS_LIST_ID}
+        placeholder="e.g. Web dev, Recipes, Inspiration"
+        defaultValue={defaultValue}
+      />
+    </div>
+  );
+}
 
 export function AddSheet({
   open,
   onClose,
   userId,
   initialUrl = null,
+  collections = [],
 }: {
   open: boolean;
   onClose: () => void;
   userId: string;
   initialUrl?: string | null;
+  collections?: string[];
 }) {
-  const [tab, setTab] = useState<"link" | "image">("link");
+  const [tab, setTab] = useState<"link" | "image" | "import">("link");
 
   // Lock body scroll while the sheet is open.
   useEffect(() => {
@@ -65,16 +104,24 @@ export function AddSheet({
           <TabButton active={tab === "image"} onClick={() => setTab("image")}>
             <ImagePlus className="h-4 w-4" /> Image
           </TabButton>
+          <TabButton active={tab === "import"} onClick={() => setTab("import")}>
+            <ListPlus className="h-4 w-4" /> Import
+          </TabButton>
         </div>
 
         <div className="overflow-y-auto px-5 py-4">
-          {tab === "link" ? (
-            <LinkForm onDone={onClose} initialUrl={initialUrl} />
-          ) : (
-            <ImageForm onDone={onClose} userId={userId} />
-          )}
+          {tab === "link" && <LinkForm onDone={onClose} initialUrl={initialUrl} />}
+          {tab === "image" && <ImageForm onDone={onClose} userId={userId} />}
+          {tab === "import" && <ImportForm />}
         </div>
       </div>
+
+      {/* Shared autocomplete source for collection fields. */}
+      <datalist id={COLLECTIONS_LIST_ID}>
+        {collections.map((c) => (
+          <option key={c} value={c} />
+        ))}
+      </datalist>
     </div>
   );
 }
@@ -254,6 +301,8 @@ function LinkForm({
         <Input id="tags" name="tags" placeholder="learning, design, coding" />
       </div>
 
+      <CollectionField id="collection" />
+
       <div>
         <Label htmlFor="notes">Notes</Label>
         <Textarea
@@ -368,6 +417,8 @@ function ImageForm({
         <Input id="img-tags" name="tags" placeholder="reference, ui, idea" />
       </div>
 
+      <CollectionField id="img-collection" />
+
       <div>
         <Label htmlFor="img-notes">Notes</Label>
         <Textarea
@@ -383,6 +434,54 @@ function ImageForm({
       <Button type="submit" disabled={busy}>
         {busy && <Loader2 className="h-4 w-4 animate-spin" />}
         Save image
+      </Button>
+    </form>
+  );
+}
+
+// ---- Import form (bulk paste, e.g. a WhatsApp export) ----
+
+function ImportForm() {
+  const router = useRouter();
+  const [state, formAction, pending] = useActionState(importLinks, emptyImport);
+
+  useEffect(() => {
+    if (state.imported && state.imported > 0) router.refresh();
+  }, [state.imported, router]);
+
+  return (
+    <form action={formAction} className="flex flex-col gap-4">
+      <p className="text-sm text-muted">
+        Paste any text containing links — for example, export a WhatsApp chat
+        (⋮ → More → Export chat → Without media) and paste it here. Every link
+        is detected, previewed, and saved. Duplicates are skipped.
+      </p>
+
+      <div>
+        <Label htmlFor="import-text">Text with links</Label>
+        <Textarea
+          id="import-text"
+          name="text"
+          rows={7}
+          placeholder="Paste your chat export or a list of links…"
+          required
+          autoFocus
+        />
+      </div>
+
+      <CollectionField id="import-collection" />
+
+      {state.error && <p className="text-sm text-danger">{state.error}</p>}
+      {state.imported !== undefined && !state.error && (
+        <p className="text-sm" style={{ color: "var(--accent)" }}>
+          Imported {state.imported} link{state.imported === 1 ? "" : "s"}
+          {state.skipped ? ` · skipped ${state.skipped} duplicate(s)` : ""}.
+        </p>
+      )}
+
+      <Button type="submit" disabled={pending}>
+        {pending && <Loader2 className="h-4 w-4 animate-spin" />}
+        {pending ? "Importing…" : "Import links"}
       </Button>
     </form>
   );

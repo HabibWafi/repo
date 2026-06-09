@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ExternalLink } from "lucide-react";
+import { ExternalLink, Folder } from "lucide-react";
 import type { ItemView } from "@/lib/types";
 import { PROVIDER_META } from "@/lib/providers";
 import { FavoriteButton } from "./favorite-button";
@@ -57,12 +57,20 @@ export function ItemCard({ item }: { item: ItemView }) {
           {title}
         </h3>
 
-        {item.url && (
-          <span className="inline-flex items-center gap-1 text-xs text-muted">
-            <ExternalLink className="h-3 w-3" />
-            <span className="truncate">{hostnameOf(item.url)}</span>
-          </span>
-        )}
+        <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
+          {item.url && (
+            <span className="inline-flex items-center gap-1">
+              <ExternalLink className="h-3 w-3" />
+              <span className="truncate">{hostnameOf(item.url)}</span>
+            </span>
+          )}
+          {item.collection && (
+            <span className="inline-flex items-center gap-1">
+              <Folder className="h-3 w-3" />
+              <span className="truncate">{item.collection}</span>
+            </span>
+          )}
+        </div>
 
         {item.tags.length > 0 && (
           <div className="mt-auto flex flex-wrap gap-1 pt-1">

@@ -25,6 +25,7 @@ export interface Item {
   thumbnail_url: string | null;
   image_path: string | null;
   tags: string[];
+  collection: string | null;
   is_favorite: boolean;
   embed_html: string | null;
   metadata: Record<string, unknown>;
@@ -66,6 +67,8 @@ export function parseTags(raw: FormDataEntryValue | null): string[] {
   );
 }
 
+const collectionSchema = z.string().trim().max(120).optional().nullable();
+
 export const createLinkSchema = z.object({
   url: urlSchema,
   title: z.string().trim().max(300).optional().nullable(),
@@ -75,6 +78,7 @@ export const createLinkSchema = z.object({
   provider: z.enum(PROVIDERS).optional(),
   embed_html: z.string().optional().nullable(),
   tags: z.array(z.string()).default([]),
+  collection: collectionSchema,
 });
 
 export const updateItemSchema = z.object({
@@ -83,4 +87,12 @@ export const updateItemSchema = z.object({
   description: z.string().trim().max(2000).optional().nullable(),
   notes: z.string().trim().max(5000).optional().nullable(),
   tags: z.array(z.string()).default([]),
+  collection: collectionSchema,
 });
+
+/** Extract unique http(s) URLs from arbitrary pasted text (e.g. a WhatsApp export). */
+export function extractUrls(text: string): string[] {
+  const matches = text.match(/https?:\/\/[^\s<>"')]+/gi) ?? [];
+  const cleaned = matches.map((u) => u.replace(/[.,;:]+$/, ""));
+  return Array.from(new Set(cleaned));
+}

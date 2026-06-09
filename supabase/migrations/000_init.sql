@@ -22,6 +22,7 @@ create table if not exists public.items (
   thumbnail_url text,
   image_path    text,
   tags          text[] not null default '{}',
+  collection    text,
   is_favorite   boolean not null default false,
   embed_html    text,
   metadata      jsonb not null default '{}',
@@ -38,6 +39,8 @@ create index if not exists items_title_trgm_idx
   on public.items using gin (title gin_trgm_ops);
 create index if not exists items_favorite_idx
   on public.items (user_id) where is_favorite;
+create index if not exists items_collection_idx
+  on public.items (user_id, collection) where collection is not null;
 
 -- Row Level Security ----------------------------------------------------------
 alter table public.items enable row level security;

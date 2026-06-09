@@ -11,8 +11,13 @@ extend.
 - 🔗 **Auto previews** — paste a link and the title + thumbnail are fetched
   automatically (YouTube & TikTok reliably; Instagram degrades gracefully)
 - 🖼️ **Image archive** — upload screenshots/photos to private storage
-- 🏷️ **Organize** — tags/categories, instant search, per-item notes, favorites
+- 🏷️ **Organize** — tags, collections/folders, instant search, per-item notes, favorites
+- 📥 **Bulk import** — paste a WhatsApp chat export (or any text) and every link is
+  detected, previewed, and saved; duplicates are skipped
 - 📱 **Mobile-first** — bottom-sheet add flow, thumb-reachable FAB, installable PWA
+- 🌗 **Dark mode** — light / dark / system toggle, persisted, no flash on load
+- 📤 **Share target** — share a link from the YouTube/TikTok/Instagram app straight
+  into the archive
 - 🧩 **Built to grow** — unified schema + provider dispatcher + `metadata` JSONB
 
 ## Tech stack
@@ -55,12 +60,22 @@ Open <http://localhost:3000> and sign in with the account you created.
 
 ## Deploy to Vercel
 
-1. Push this repo to GitHub and **Import Project** in Vercel.
-2. Add the same environment variables (all environments) in
-   Project Settings → Environment Variables.
+Finish the Supabase setup above first (you need the URL + anon key), then:
+
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FHabibWafi%2Frepo&env=NEXT_PUBLIC_SUPABASE_URL,NEXT_PUBLIC_SUPABASE_ANON_KEY,OWNER_USER_ID&envDescription=Supabase%20project%20URL%2C%20anon%20public%20key%2C%20and%20your%20user%20UUID&project-name=archive&repository-name=archive)
+
+The button clones the repo, prompts for the three environment variables, and
+deploys. Or do it manually:
+
+1. **Import Project** in Vercel from this GitHub repo.
+2. Add the env vars (all environments) in Project Settings → Environment Variables:
+   `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `OWNER_USER_ID`.
 3. In Supabase → Authentication → URL Configuration, add your Vercel
    production and preview URLs.
-4. Deploy.
+4. Deploy. (No extra build config needed — it's a standard Next.js app.)
+
+> Note: deploying requires **your** Vercel + Supabase accounts, so this step is
+> yours to click through — everything in the repo is already deploy-ready.
 
 ## Notes & limitations
 

@@ -2,7 +2,15 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Search, Plus, Star, Link2, Image as ImageIcon, LayoutGrid } from "lucide-react";
+import {
+  Search,
+  Plus,
+  Star,
+  Link2,
+  Image as ImageIcon,
+  LayoutGrid,
+  Folder,
+} from "lucide-react";
 import type { ItemView } from "@/lib/types";
 import { ItemCard } from "./item-card";
 import { AddSheet } from "./add-sheet";
@@ -23,6 +31,7 @@ export function ArchiveView({
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   const [activeTag, setActiveTag] = useState<string | null>(null);
+  const [activeCollection, setActiveCollection] = useState<string | null>(null);
   // Auto-open the add sheet when arrived via a share / ?add= link.
   const [addOpen, setAddOpen] = useState(Boolean(initialUrl));
   const router = useRouter();
@@ -41,15 +50,29 @@ export function ArchiveView({
       .map(([t]) => t);
   }, [items]);
 
+  const allCollections = useMemo(() => {
+    const set = new Set<string>();
+    for (const it of items) if (it.collection) set.add(it.collection);
+    return [...set].sort((a, b) => a.localeCompare(b));
+  }, [items]);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return items.filter((it) => {
       if (filter === "favorites" && !it.is_favorite) return false;
       if (filter === "link" && it.type !== "link") return false;
       if (filter === "image" && it.type !== "image") return false;
+      if (activeCollection && it.collection !== activeCollection) return false;
       if (activeTag && !it.tags.includes(activeTag)) return false;
       if (q) {
-        const hay = [it.title, it.description, it.notes, it.url, ...it.tags]
+        const hay = [
+          it.title,
+          it.description,
+          it.notes,
+          it.url,
+          it.collection,
+          ...it.tags,
+        ]
           .filter(Boolean)
           .join(" ")
           .toLowerCase();
@@ -57,7 +80,7 @@ export function ArchiveView({
       }
       return true;
     });
-  }, [items, query, filter, activeTag]);
+  }, [items, query, filter, activeTag, activeCollection]);
 
   const filterTabs: { key: Filter; label: string; Icon: typeof Star }[] = [
     { key: "all", label: "All", Icon: LayoutGrid },
@@ -99,6 +122,29 @@ export function ArchiveView({
               </button>
             ))}
           </div>
+
+          {allCollections.length > 0 && (
+            <div className="no-scrollbar mt-2 flex gap-2 overflow-x-auto">
+              {allCollections.map((c) => {
+                const active = activeCollection === c;
+                return (
+                  <button
+                    key={c}
+                    onClick={() => setActiveCollection(active ? null : c)}
+                    className={cn(
+                      "inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition",
+                      active
+                        ? "bg-accent text-accent-foreground"
+                        : "bg-surface-muted text-muted"
+                    )}
+                  >
+                    <Folder className="h-3 w-3" />
+                    {c}
+                  </button>
+                );
+              })}
+            </div>
+          )}
 
           {allTags.length > 0 && (
             <div className="no-scrollbar mt-2 flex gap-2 overflow-x-auto">
@@ -157,6 +203,7 @@ export function ArchiveView({
         onClose={() => setAddOpen(false)}
         userId={userId}
         initialUrl={initialUrl}
+        collections={allCollections}
       />
     </>
   );

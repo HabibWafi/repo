@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Search, Plus, Star, Link2, Image as ImageIcon, LayoutGrid } from "lucide-react";
 import type { ItemView } from "@/lib/types";
 import { ItemCard } from "./item-card";
@@ -13,14 +14,23 @@ type Filter = "all" | "link" | "image" | "favorites";
 export function ArchiveView({
   items,
   userId,
+  initialUrl = null,
 }: {
   items: ItemView[];
   userId: string;
+  initialUrl?: string | null;
 }) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   const [activeTag, setActiveTag] = useState<string | null>(null);
-  const [addOpen, setAddOpen] = useState(false);
+  // Auto-open the add sheet when arrived via a share / ?add= link.
+  const [addOpen, setAddOpen] = useState(Boolean(initialUrl));
+  const router = useRouter();
+
+  // Strip the ?add= param so a refresh doesn't re-trigger the share flow.
+  useEffect(() => {
+    if (initialUrl) router.replace("/");
+  }, [initialUrl, router]);
 
   const allTags = useMemo(() => {
     const counts = new Map<string, number>();
@@ -146,6 +156,7 @@ export function ArchiveView({
         open={addOpen}
         onClose={() => setAddOpen(false)}
         userId={userId}
+        initialUrl={initialUrl}
       />
     </>
   );

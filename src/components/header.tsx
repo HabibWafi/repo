@@ -1,4 +1,5 @@
 import { Archive, LogOut } from "lucide-react";
+import { ThemeToggle } from "./theme-toggle";
 
 export function Header() {
   return (
@@ -10,15 +11,18 @@ export function Header() {
           </span>
           <span className="text-base font-semibold tracking-tight">Archive</span>
         </div>
-        <form action="/auth/signout" method="post">
-          <button
-            type="submit"
-            className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm text-muted transition hover:bg-surface-muted"
-          >
-            <LogOut className="h-4 w-4" />
-            <span className="hidden sm:inline">Sign out</span>
-          </button>
-        </form>
+        <div className="flex items-center gap-1">
+          <ThemeToggle />
+          <form action="/auth/signout" method="post">
+            <button
+              type="submit"
+              className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm text-muted transition hover:bg-surface-muted"
+            >
+              <LogOut className="h-4 w-4" />
+              <span className="hidden sm:inline">Sign out</span>
+            </button>
+          </form>
+        </div>
       </div>
     </header>
   );

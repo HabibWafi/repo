@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useState } from "react";
+import { useActionState, useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, X, Link2, ImagePlus, RefreshCw } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
@@ -16,10 +16,12 @@ export function AddSheet({
   open,
   onClose,
   userId,
+  initialUrl = null,
 }: {
   open: boolean;
   onClose: () => void;
   userId: string;
+  initialUrl?: string | null;
 }) {
   const [tab, setTab] = useState<"link" | "image">("link");
 
@@ -67,7 +69,7 @@ export function AddSheet({
 
         <div className="overflow-y-auto px-5 py-4">
           {tab === "link" ? (
-            <LinkForm onDone={onClose} />
+            <LinkForm onDone={onClose} initialUrl={initialUrl} />
           ) : (
             <ImageForm onDone={onClose} userId={userId} />
           )}
@@ -103,10 +105,16 @@ function TabButton({
 
 // ---- Link form ----
 
-function LinkForm({ onDone }: { onDone: () => void }) {
+function LinkForm({
+  onDone,
+  initialUrl = null,
+}: {
+  onDone: () => void;
+  initialUrl?: string | null;
+}) {
   const router = useRouter();
   const [state, formAction, pending] = useActionState(createLink, empty);
-  const [url, setUrl] = useState("");
+  const [url, setUrl] = useState(initialUrl ?? "");
   const [preview, setPreview] = useState<PreviewResult | null>(null);
   const [fetching, setFetching] = useState(false);
   const [title, setTitle] = useState("");
@@ -118,8 +126,8 @@ function LinkForm({ onDone }: { onDone: () => void }) {
     }
   }, [state.success, router, onDone]);
 
-  async function loadPreview() {
-    const u = url.trim();
+  const loadPreview = useCallback(async (value: string) => {
+    const u = value.trim();
     if (!u) return;
     setFetching(true);
     try {
@@ -136,7 +144,15 @@ function LinkForm({ onDone }: { onDone: () => void }) {
     } finally {
       setFetching(false);
     }
-  }
+  }, []);
+
+  // When opened via a share/?add= link, fetch the preview automatically.
+  // Deferred so the network kickoff isn't a synchronous effect side effect.
+  useEffect(() => {
+    if (!initialUrl) return;
+    const t = setTimeout(() => loadPreview(initialUrl), 0);
+    return () => clearTimeout(t);
+  }, [initialUrl, loadPreview]);
 
   const meta = preview ? PROVIDER_META[preview.provider] : null;
 
@@ -153,7 +169,7 @@ function LinkForm({ onDone }: { onDone: () => void }) {
             placeholder="Paste a YouTube, TikTok, Instagram or any link"
             value={url}
             onChange={(e) => setUrl(e.target.value)}
-            onBlur={loadPreview}
+            onBlur={() => loadPreview(url)}
             required
             autoFocus
           />
@@ -161,7 +177,7 @@ function LinkForm({ onDone }: { onDone: () => void }) {
             type="button"
             variant="secondary"
             size="icon"
-            onClick={loadPreview}
+            onClick={() => loadPreview(url)}
             disabled={fetching || !url.trim()}
             aria-label="Fetch preview"
           >

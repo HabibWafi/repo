@@ -6,7 +6,12 @@ import type { Item, ItemView } from "@/lib/types";
 
 const BUCKET = "archive";
 
-export default async function HomePage() {
+export default async function HomePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ add?: string }>;
+}) {
+  const { add } = await searchParams;
   const supabase = await createClient();
   const {
     data: { user },
@@ -46,7 +51,7 @@ export default async function HomePage() {
   return (
     <div className="min-h-full">
       <Header />
-      <ArchiveView items={views} userId={user.id} />
+      <ArchiveView items={views} userId={user.id} initialUrl={add ?? null} />
     </div>
   );
 }

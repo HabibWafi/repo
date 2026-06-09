@@ -2,7 +2,8 @@
 
 /*
   Elegant, professional neutral palette with a refined indigo accent.
-  Light + dark, driven by prefers-color-scheme.
+  Theme is user-controllable via [data-theme] on <html>, defaulting to the
+  system preference when unset.
 */
 :root {
   --background: #fafaf9;
@@ -18,8 +19,23 @@
   --radius: 0.85rem;
 }
 
+/* Explicit user choice of dark (specificity beats the base :root). */
+:root[data-theme="dark"] {
+  --background: #0c0a09;
+  --surface: #1c1917;
+  --surface-muted: #292524;
+  --foreground: #f5f5f4;
+  --muted: #a8a29e;
+  --border: #292524;
+  --accent: #818cf8;
+  --accent-foreground: #1c1917;
+  --danger: #f87171;
+  --star: #fbbf24;
+}
+
+/* Follow the system when the user hasn't explicitly chosen light. */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --background: #0c0a09;
     --surface: #1c1917;
     --surface-muted: #292524;
